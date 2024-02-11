@@ -1,9 +1,7 @@
 [workspace]
 members = [
     "crates/activity_indicator",
-    "crates/ai",
     "crates/assets",
-    "crates/assistant",
     "crates/audio",
     "crates/auto_update",
     "crates/breadcrumbs",
@@ -12,8 +10,6 @@ members = [
     "crates/cli",
     "crates/client",
     "crates/clock",
-    "crates/collab",
-    "crates/collab_ui",
     "crates/collections",
     "crates/command_palette",
     "crates/copilot",
@@ -91,9 +87,7 @@ resolver = "2"
 
 [workspace.dependencies]
 activity_indicator = { path = "crates/activity_indicator" }
-ai = { path = "crates/ai" }
 assets = { path = "crates/assets" }
-assistant = { path = "crates/assistant" }
 audio = { path = "crates/audio" }
 auto_update = { path = "crates/auto_update" }
 breadcrumbs = { path = "crates/breadcrumbs" }
@@ -102,8 +96,6 @@ channel = { path = "crates/channel" }
 cli = { path = "crates/cli" }
 client = { path = "crates/client" }
 clock = { path = "crates/clock" }
-collab = { path = "crates/collab" }
-collab_ui = { path = "crates/collab_ui" }
 collections = { path = "crates/collections" }
 color = { path = "crates/color" }
 command_palette = { path = "crates/command_palette" }
@@ -226,7 +218,7 @@ tree-sitter = { version = "0.20", features = ["wasm"] }
 tree-sitter-bash = { git = "https://github.com/tree-sitter/tree-sitter-bash", rev = "7331995b19b8f8aba2d5e26deb51d2195c18bc94" }
 tree-sitter-beancount = { git = "https://github.com/polarmutex/tree-sitter-beancount", rev = "da1bf8c6eb0ae7a97588affde7227630bcd678b6" }
 tree-sitter-c = "0.20.1"
-tree-sitter-clojure = { git = "https://github.com/prcastro/tree-sitter-clojure", branch = "update-ts"}
+tree-sitter-clojure = { git = "https://github.com/prcastro/tree-sitter-clojure", branch = "update-ts" }
 tree-sitter-c-sharp = { git = "https://github.com/tree-sitter/tree-sitter-c-sharp", rev = "dd5e59721a5f8dae34604060833902b882023aaf" }
 tree-sitter-cpp = { git = "https://github.com/tree-sitter/tree-sitter-cpp", rev = "f44509141e7e483323d2ec178f2d2e6c0fc041c1" }
 tree-sitter-css = { git = "https://github.com/tree-sitter/tree-sitter-css", rev = "769203d0f9abe1a9a691ac2b9fe4bb4397a73c51" }
