@@ -1,9 +1,11 @@
 mod app_menus;
 pub mod languages;
 mod only_instance;
+#[cfg(feature = "collab_ui")]
 mod open_listener;
 
 pub use app_menus::*;
+#[cfg(feature = "assistant")]
 use assistant::AssistantPanel;
 use breadcrumbs::Breadcrumbs;
 use collections::VecDeque;
@@ -13,6 +15,7 @@ use gpui::{
     ViewContext, VisualContext, WindowBounds, WindowKind, WindowOptions,
 };
 pub use only_instance::*;
+#[cfg(feature = "collab_ui")]
 pub use open_listener::*;
 
 use anyhow::{anyhow, Context as _};
@@ -25,7 +28,7 @@ use rope::Rope;
 use search::project_search::ProjectSearchBar;
 use settings::{initial_local_settings_content, KeymapFile, Settings, SettingsStore};
 use std::{borrow::Cow, ops::Deref, path::Path, sync::Arc};
-use terminal_view::terminal_panel::{self, TerminalPanel};
+use terminal_view::terminal_panel::TerminalPanel;
 use util::{
     asset_str,
     paths::{self, LOCAL_SETTINGS_RELATIVE_PATH},
@@ -39,7 +42,7 @@ use workspace::{
     create_and_open_local_file, notifications::simple_message_notification::MessageNotification,
     open_new, AppState, NewFile, NewWindow, Workspace, WorkspaceSettings,
 };
-use zed_actions::{OpenBrowser, OpenSettings, OpenZedUrl, Quit};
+use zed_actions::{OpenBrowser, OpenSettings, Quit};
 
 actions!(
     zed,
@@ -115,6 +118,7 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut AppContext) {
         })
         .detach();
 
+        #[cfg(feature = "copilot")]
         let copilot = cx.new_view(|cx| copilot_ui::CopilotButton::new(app_state.fs.clone(), cx));
         let diagnostic_summary =
             cx.new_view(|cx| diagnostics::items::DiagnosticIndicator::new(workspace, cx));
@@ -130,6 +134,7 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut AppContext) {
             status_bar.add_left_item(diagnostic_summary, cx);
             status_bar.add_left_item(activity_indicator, cx);
             status_bar.add_right_item(feedback_button, cx);
+            #[cfg(feature = "copilot")]
             status_bar.add_right_item(copilot, cx);
             status_bar.add_right_item(active_buffer_language, cx);
             status_bar.add_right_item(vim_mode_indicator, cx);
@@ -154,37 +159,47 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut AppContext) {
         cx.spawn(|workspace_handle, mut cx| async move {
             let project_panel = ProjectPanel::load(workspace_handle.clone(), cx.clone());
             let terminal_panel = TerminalPanel::load(workspace_handle.clone(), cx.clone());
+            #[cfg(feature = "assistant")]
             let assistant_panel = AssistantPanel::load(workspace_handle.clone(), cx.clone());
+            #[cfg(feature = "collab_ui")]
             let channels_panel =
                 collab_ui::collab_panel::CollabPanel::load(workspace_handle.clone(), cx.clone());
+            #[cfg(feature = "collab_ui")]
             let chat_panel =
                 collab_ui::chat_panel::ChatPanel::load(workspace_handle.clone(), cx.clone());
+            #[cfg(feature = "collab_ui")]
             let notification_panel = collab_ui::notification_panel::NotificationPanel::load(
                 workspace_handle.clone(),
                 cx.clone(),
             );
+
             let (
                 project_panel,
                 terminal_panel,
-                assistant_panel,
-                channels_panel,
-                chat_panel,
-                notification_panel,
             ) = futures::try_join!(
                 project_panel,
                 terminal_panel,
-                assistant_panel,
+            )?;
+
+            #[cfg(feature = "assistant")]
+            let (assistant_panel,) = futures::try_join!(assistant_panel)?;
+            #[cfg(feature = "collab_ui")]
+            let (channels_panel, chat_panel, notification_panel) = futures::try_join!(
                 channels_panel,
-                chat_panel,
+                chat_panel
                 notification_panel,
             )?;
 
             workspace_handle.update(&mut cx, |workspace, cx| {
                 workspace.add_panel(project_panel, cx);
                 workspace.add_panel(terminal_panel, cx);
+                #[cfg(feature = "assistant")]
                 workspace.add_panel(assistant_panel, cx);
+                #[cfg(feature = "collab_ui")]
                 workspace.add_panel(channels_panel, cx);
+                #[cfg(feature = "collab_ui")]
                 workspace.add_panel(chat_panel, cx);
+                #[cfg(feature = "collab_ui")]
                 workspace.add_panel(notification_panel, cx);
                 cx.focus_self();
             })
@@ -201,9 +216,6 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut AppContext) {
             })
             .register_action(|_, _: &ToggleFullScreen, cx| {
                 cx.toggle_full_screen();
-            })
-            .register_action(|_, action: &OpenZedUrl, cx| {
-                OpenListener::global(cx).open_urls(&[action.url.clone()])
             })
             .register_action(|_, action: &OpenBrowser, cx| cx.open_url(&action.url))
             .register_action(move |_, _: &IncreaseBufferFontSize, cx| {
@@ -288,35 +300,6 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut AppContext) {
                     workspace.toggle_panel_focus::<ProjectPanel>(cx);
                 },
             )
-            .register_action(
-                |workspace: &mut Workspace,
-                 _: &collab_ui::collab_panel::ToggleFocus,
-                 cx: &mut ViewContext<Workspace>| {
-                    workspace.toggle_panel_focus::<collab_ui::collab_panel::CollabPanel>(cx);
-                },
-            )
-            .register_action(
-                |workspace: &mut Workspace,
-                 _: &collab_ui::chat_panel::ToggleFocus,
-                 cx: &mut ViewContext<Workspace>| {
-                    workspace.toggle_panel_focus::<collab_ui::chat_panel::ChatPanel>(cx);
-                },
-            )
-            .register_action(
-                |workspace: &mut Workspace,
-                 _: &collab_ui::notification_panel::ToggleFocus,
-                 cx: &mut ViewContext<Workspace>| {
-                    workspace
-                        .toggle_panel_focus::<collab_ui::notification_panel::NotificationPanel>(cx);
-                },
-            )
-            .register_action(
-                |workspace: &mut Workspace,
-                 _: &terminal_panel::ToggleFocus,
-                 cx: &mut ViewContext<Workspace>| {
-                    workspace.toggle_panel_focus::<TerminalPanel>(cx);
-                },
-            )
             .register_action({
                 let app_state = Arc::downgrade(&app_state);
                 move |_, _: &NewWindow, cx| {
@@ -339,6 +322,36 @@ pub fn initialize_workspace(app_state: Arc<AppState>, cx: &mut AppContext) {
                     }
                 }
             });
+
+        #[cfg(feature = "collab_ui")]
+        {
+            workspace.register_action(
+                |workspace: &mut Workspace,
+                _: &collab_ui::notification_panel::ToggleFocus,
+                cx: &mut ViewContext<Workspace>| {
+                    workspace
+                        .toggle_panel_focus::<collab_ui::notification_panel::NotificationPanel>(cx);
+                },
+            )
+            .register_action(
+                |workspace: &mut Workspace,
+                 _: &collab_ui::chat_panel::ToggleFocus,
+                 cx: &mut ViewContext<Workspace>| {
+                    workspace.toggle_panel_focus::<collab_ui::chat_panel::ChatPanel>(cx);
+                },
+            )
+            .register_action(
+                |workspace: &mut Workspace,
+                 _: &collab_ui::collab_panel::ToggleFocus,
+                 cx: &mut ViewContext<Workspace>| {
+                    workspace.toggle_panel_focus::<collab_ui::collab_panel::CollabPanel>(cx);
+                },
+            )
+            .register_action(|_, action: &OpenZedUrl, cx| {
+                OpenListener::global(cx).open_urls(&[action.url.clone()])
+            });
+        }
+
 
         workspace.focus_handle(cx).focus(cx);
     })
@@ -2735,9 +2748,11 @@ mod tests {
             language::init(cx);
             editor::init(cx);
             project_panel::init_settings(cx);
+            #[cfg(feature = "collab_ui")]
             collab_ui::init(&app_state, cx);
             project_panel::init((), cx);
             terminal_view::init(cx);
+            #[cfg(feature = "assistant")]
             assistant::init(cx);
             initialize_workspace(app_state.clone(), cx);
             app_state

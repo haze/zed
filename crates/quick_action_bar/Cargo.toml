@@ -10,7 +10,7 @@ path = "src/quick_action_bar.rs"
 doctest = false
 
 [dependencies]
-assistant.workspace = true
+assistant = { path = "../assistant" }
 editor.workspace = true
 gpui.workspace = true
 search.workspace = true

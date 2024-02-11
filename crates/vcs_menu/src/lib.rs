@@ -15,6 +15,8 @@ use ui::{
 use util::ResultExt;
 use workspace::{ModalView, Toast, Workspace};
 
+mod vcs_titlebar_item;
+
 actions!(branches, [OpenRecent]);
 
 pub fn init(cx: &mut AppContext) {
@@ -24,6 +26,8 @@ pub fn init(cx: &mut AppContext) {
         });
     })
     .detach();
+
+    vcs_titlebar_item::init(cx);
 }
 
 pub struct BranchList {

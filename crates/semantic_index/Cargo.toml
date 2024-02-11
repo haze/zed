@@ -10,7 +10,7 @@ path = "src/semantic_index.rs"
 doctest = false
 
 [dependencies]
-ai.workspace = true
+ai = { path = "../ai" }
 anyhow.workspace = true
 async-trait.workspace = true
 collections.workspace = true
@@ -41,7 +41,7 @@ util.workspace = true
 workspace.workspace = true
 
 [dev-dependencies]
-ai = { workspace = true, features = ["test-support"] }
+ai = { path = "../ai", features = ["test-support"] }
 client.workspace = true
 collections = { workspace = true, features = ["test-support"] }
 ctor.workspace = true
@@ -54,7 +54,7 @@ project = { workspace = true, features = ["test-support"] }
 rand.workspace = true
 rpc = { workspace = true, features = ["test-support"] }
 rust-embed.workspace = true
-settings = { workspace = true, features = ["test-support"]}
+settings = { workspace = true, features = ["test-support"] }
 tempfile.workspace = true
 tree-sitter-cpp.workspace = true
 tree-sitter-elixir.workspace = true

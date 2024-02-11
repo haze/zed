@@ -6,6 +6,12 @@ version = "0.123.0"
 publish = false
 license = "GPL-3.0-or-later"
 
+[features]
+default = []
+assistant = ["dep:assistant"]
+collab = ["dep:collab_ui"]
+copilot = ["dep:copilot_ui"]
+
 [lib]
 name = "zed"
 path = "src/zed.rs"
@@ -16,11 +22,13 @@ name = "Zed"
 path = "src/main.rs"
 
 [dependencies]
+assistant = { path = "../assistant", optional = true }
+collab_ui = { path = "../collab_ui", optional = true }
+copilot_ui = { path = "../copilot_ui", optional = true }
+
 activity_indicator.workspace = true
-ai.workspace = true
 anyhow.workspace = true
 assets.workspace = true
-assistant.workspace = true
 async-compression.workspace = true
 async-recursion = "0.3"
 async-tar = "0.4.2"
@@ -34,11 +42,8 @@ channel.workspace = true
 chrono = "0.4"
 cli.workspace = true
 client.workspace = true
-collab_ui.workspace = true
 collections.workspace = true
 command_palette.workspace = true
-copilot.workspace = true
-copilot_ui.workspace = true
 ctor.workspace = true
 db.workspace = true
 diagnostics.workspace = true
@@ -157,6 +162,7 @@ urlencoding = "2.1.2"
 util.workspace = true
 uuid.workspace = true
 vim.workspace = true
+vcs_menu.workspace = true
 welcome.workspace = true
 workspace.workspace = true
 zed_actions.workspace = true

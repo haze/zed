@@ -15,7 +15,7 @@ anyhow.workspace = true
 backtrace-on-stack-overflow = "0.3.0"
 chrono = "0.4"
 clap = { version = "4.4", features = ["derive", "string"] }
-collab_ui = { workspace = true, features = ["stories"] }
+collab_ui = { path = "../collab_ui", features = ["stories"] }
 ctrlc = "3.4"
 dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
 editor.workspace = true

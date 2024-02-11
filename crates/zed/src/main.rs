@@ -6,7 +6,12 @@ use backtrace::Backtrace;
 use chrono::Utc;
 use cli::FORCE_CLI_MODE_ENV_VAR_NAME;
 use client::{Client, UserStore};
+#[cfg(feature = "collab_ui")]
 use collab_ui::channel_view::ChannelView;
+#[cfg(feature = "collab_ui")]
+use gpui::AsyncAppContext;
+#[cfg(not(feature = "collab_ui"))]
+use vcs_menu;
 use db::kvp::KEY_VALUE_STORE;
 use editor::Editor;
 use env_logger::Builder;
@@ -14,7 +19,7 @@ use fs::RealFs;
 #[cfg(target_os = "macos")]
 use fsevent::StreamFlags;
 use futures::StreamExt;
-use gpui::{App, AppContext, AsyncAppContext, Context, SemanticVersion, Task};
+use gpui::{App, AppContext, Context, SemanticVersion, Task};
 use isahc::{prelude::Configurable, Request};
 use language::LanguageRegistry;
 use log::LevelFilter;
@@ -23,20 +28,23 @@ use assets::Assets;
 use mimalloc::MiMalloc;
 use node_runtime::RealNodeRuntime;
 use parking_lot::Mutex;
-use release_channel::{parse_zed_link, AppCommitSha, ReleaseChannel, RELEASE_CHANNEL};
+use release_channel::{AppCommitSha, ReleaseChannel, RELEASE_CHANNEL};
+#[cfg(feature = "collab_ui")]
+use release_channel::parse_zed_link;
 use serde::{Deserialize, Serialize};
 use settings::{
     default_settings, handle_settings_file_changes, watch_config_file, Settings, SettingsStore,
 };
 use simplelog::ConfigBuilder;
 use smol::process::Command;
+#[cfg(feature = "collab_ui")]
+use std::path::Path;
 use std::{
     env,
     ffi::OsStr,
     fs::OpenOptions,
     io::{IsTerminal, Write},
     panic,
-    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicU32, Ordering},
         Arc,
@@ -45,19 +53,25 @@ use std::{
 };
 use theme::{ActiveTheme, SystemAppearance, ThemeRegistry, ThemeSettings};
 use util::{
-    async_maybe,
     http::{self, HttpClient, ZedHttpClient},
     paths::{self, CRASHES_DIR, CRASHES_RETIRED_DIR},
     ResultExt,
 };
+#[cfg(feature = "collab_ui")]
+use util::async_maybe;
 use uuid::Uuid;
-use welcome::{show_welcome_view, BaseKeymap, FIRST_OPEN};
+use welcome::BaseKeymap;
+#[cfg(feature = "collab_ui")]
+use welcome::{show_welcome_view, FIRST_OPEN};
 use workspace::{AppState, WorkspaceStore};
 use zed::{
-    app_menus, build_window_options, ensure_only_instance, handle_cli_connection,
-    handle_keymap_file_changes, initialize_workspace, languages, IsOnlyInstance, OpenListener,
-    OpenRequest,
+    app_menus, build_window_options, ensure_only_instance, handle_keymap_file_changes, initialize_workspace, languages, IsOnlyInstance,
 };
+
+#[cfg(feature = "collab_ui")]
+use zed::{handle_cli_connection, OpenListener, OpenRequest};
+#[cfg(feature = "collab_ui")]
+use std::path::PathBuf;
 
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
@@ -104,10 +118,14 @@ fn main() {
         })
     };
 
-    let (listener, mut open_rx) = OpenListener::new();
-    let listener = Arc::new(listener);
-    let open_listener = listener.clone();
-    app.on_open_urls(move |urls, _| open_listener.open_urls(&urls));
+    #[cfg(feature = "collab_ui")]
+    {
+        let (listener, mut open_rx) = OpenListener::new();
+        let listener = Arc::new(listener);
+        let open_listener = listener.clone();
+        app.on_open_urls(move |urls, _| open_listener.open_urls(&urls));
+    }
+
     app.on_reopen(move |cx| {
         if let Some(app_state) = AppState::try_global(cx)
             .map(|app_state| app_state.upgrade())
@@ -127,6 +145,7 @@ fn main() {
         }
 
         SystemAppearance::init(cx);
+        #[cfg(feature = "collab_ui")]
         OpenListener::set_global(listener.clone(), cx);
 
         load_embedded_fonts(cx);
@@ -144,6 +163,7 @@ fn main() {
 
         let client = client::Client::new(http.clone(), cx);
         let mut languages = LanguageRegistry::new(login_shell_env_loaded);
+        #[cfg(feature = "copilot")]
         let copilot_language_server_id = languages.next_language_server_id();
         languages.set_executor(cx.background_executor().clone());
         languages.set_language_server_download_dir(paths::LANGUAGES_DIR.clone());
@@ -165,12 +185,14 @@ fn main() {
         language::init(cx);
         editor::init(cx);
         diagnostics::init(cx);
+        #[cfg(feature = "copilot")]
         copilot::init(
             copilot_language_server_id,
             http.clone(),
             node_runtime.clone(),
             cx,
         );
+        #[cfg(feature = "assistant")]
         assistant::init(cx);
 
         extension::init(fs.clone(), languages.clone(), ThemeRegistry::global(cx), cx);
@@ -250,7 +272,10 @@ fn main() {
         language_tools::init(cx);
         call::init(app_state.client.clone(), app_state.user_store.clone(), cx);
         notifications::init(app_state.client.clone(), app_state.user_store.clone(), cx);
+        #[cfg(feature = "collab_ui")]
         collab_ui::init(&app_state, cx);
+        #[cfg(not(feature = "collab_ui"))]
+        vcs_menu::init(cx);
         feedback::init(cx);
         markdown_preview::init(cx);
         welcome::init(cx);
@@ -263,14 +288,17 @@ fn main() {
             #[cfg(not(target_os = "linux"))]
             upload_panics_and_crashes(http.clone(), cx);
             cx.activate(true);
-            let urls = collect_url_args();
-            if !urls.is_empty() {
-                listener.open_urls(&urls)
+            #[cfg(feature = "collab_ui")] {
+                let urls = collect_url_args();
+                if !urls.is_empty() {
+                    listener.open_urls(&urls)
+                }
             }
         } else {
             upload_panics_and_crashes(http.clone(), cx);
             // TODO Development mode that forces the CLI mode usually runs Zed binary as is instead
             // of an *app, hence gets no specific callbacks run. Emulate them here, if needed.
+            #[cfg(feature = "collab_ui")]
             if std::env::var(FORCE_CLI_MODE_ENV_VAR_NAME).ok().is_some()
                 && !listener.triggered.load(Ordering::Acquire)
             {
@@ -278,8 +306,10 @@ fn main() {
             }
         }
 
+        #[cfg(feature = "collab_ui")]
         let mut triggered_authentication = false;
 
+        #[cfg(feature = "collab_ui")]
         fn open_paths_and_log_errs(
             paths: &[PathBuf],
             app_state: &Arc<AppState>,
@@ -298,6 +328,7 @@ fn main() {
             .detach();
         }
 
+        #[cfg(feature = "collab_ui")]
         match open_rx.try_next() {
             Ok(Some(OpenRequest::Paths { paths })) => {
                 open_paths_and_log_errs(&paths, &app_state, cx)
@@ -349,65 +380,68 @@ fn main() {
                 .detach(),
         }
 
-        let app_state = app_state.clone();
-        cx.spawn(move |cx| async move {
-            while let Some(request) = open_rx.next().await {
-                match request {
-                    OpenRequest::Paths { paths } => {
-                        cx.update(|cx| open_paths_and_log_errs(&paths, &app_state, cx))
-                            .ok();
-                    }
-                    OpenRequest::CliConnection { connection } => {
-                        let app_state = app_state.clone();
-                        cx.spawn(move |cx| {
-                            handle_cli_connection(connection, app_state.clone(), cx)
-                        })
-                        .detach();
-                    }
-                    OpenRequest::JoinChannel { channel_id } => {
-                        let app_state = app_state.clone();
-                        cx.update(|mut cx| {
-                            cx.spawn(|cx| async move {
-                                cx.update(|cx| {
-                                    workspace::open_channel(channel_id, app_state, None, cx)
+        #[cfg(feature = "collab_ui")] {
+            let app_state = app_state.clone();
+            cx.spawn(move |cx| async move {
+                while let Some(request) = open_rx.next().await {
+                    match request {
+                        OpenRequest::Paths { paths } => {
+                            cx.update(|cx| open_paths_and_log_errs(&paths, &app_state, cx))
+                                .ok();
+                        }
+                        OpenRequest::CliConnection { connection } => {
+                            let app_state = app_state.clone();
+                            cx.spawn(move |cx| {
+                                handle_cli_connection(connection, app_state.clone(), cx)
+                            })
+                            .detach();
+                        }
+                        OpenRequest::JoinChannel { channel_id } => {
+                            let app_state = app_state.clone();
+                            cx.update(|mut cx| {
+                                cx.spawn(|cx| async move {
+                                    cx.update(|cx| {
+                                        workspace::open_channel(channel_id, app_state, None, cx)
+                                    })?
+                                    .await?;
+                                    anyhow::Ok(())
+                                })
+                                .detach_and_log_err(&mut cx);
+                            })
+                            .log_err();
+                        }
+                        OpenRequest::OpenChannelNotes {
+                            channel_id,
+                            heading,
+                        } => {
+                            let app_state = app_state.clone();
+                            let open_notes_task = cx.spawn(|mut cx| async move {
+                                let workspace_window =
+                                    workspace::get_any_active_workspace(app_state, cx.clone()).await?;
+                                let workspace = workspace_window.root_view(&cx)?;
+                                cx.update_window(workspace_window.into(), |_, cx| {
+                                    ChannelView::open(channel_id, heading, workspace, cx)
                                 })?
                                 .await?;
                                 anyhow::Ok(())
-                            })
-                            .detach_and_log_err(&mut cx);
-                        })
-                        .log_err();
-                    }
-                    OpenRequest::OpenChannelNotes {
-                        channel_id,
-                        heading,
-                    } => {
-                        let app_state = app_state.clone();
-                        let open_notes_task = cx.spawn(|mut cx| async move {
-                            let workspace_window =
-                                workspace::get_any_active_workspace(app_state, cx.clone()).await?;
-                            let workspace = workspace_window.root_view(&cx)?;
-                            cx.update_window(workspace_window.into(), |_, cx| {
-                                ChannelView::open(channel_id, heading, workspace, cx)
-                            })?
-                            .await?;
-                            anyhow::Ok(())
-                        });
-                        cx.update(|cx| open_notes_task.detach_and_log_err(cx))
-                            .log_err();
+                            });
+                            cx.update(|cx| open_notes_task.detach_and_log_err(cx))
+                                .log_err();
+                        }
                     }
                 }
-            }
-        })
-        .detach();
+            })
+            .detach();
 
-        if !triggered_authentication {
-            cx.spawn(|cx| async move { authenticate(client, &cx).await })
-                .detach_and_log_err(cx);
+            if !triggered_authentication {
+                cx.spawn(|cx| async move { authenticate(client, &cx).await })
+                    .detach_and_log_err(cx);
+            }
         }
     });
 }
 
+#[cfg(feature = "copilot")]
 async fn authenticate(client: Arc<Client>, cx: &AsyncAppContext) -> Result<()> {
     if stdout_is_a_pty() {
         if client::IMPERSONATE_LOGIN.is_some() {
@@ -445,6 +479,7 @@ async fn installation_id() -> Result<(String, bool)> {
     Ok((installation_id, false))
 }
 
+#[cfg(feature = "collab_ui")]
 async fn restore_or_create_workspace(app_state: &Arc<AppState>, cx: AsyncAppContext) {
     async_maybe!({
         if let Some(location) = workspace::last_opened_workspace_paths().await {
@@ -850,6 +885,7 @@ fn stdout_is_a_pty() -> bool {
     std::env::var(FORCE_CLI_MODE_ENV_VAR_NAME).ok().is_none() && std::io::stdout().is_terminal()
 }
 
+#[cfg(feature = "collab_ui")]
 fn collect_url_args() -> Vec<String> {
     env::args()
         .skip(1)
