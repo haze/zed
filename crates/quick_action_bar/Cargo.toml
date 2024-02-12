@@ -9,8 +9,12 @@ license = "GPL-3.0-or-later"
 path = "src/quick_action_bar.rs"
 doctest = false
 
+[features]
+default = []
+assistant = ["dep:assistant"]
+
 [dependencies]
-assistant = { path = "../assistant" }
+assistant = { path = "../assistant", optional = true }
 editor.workspace = true
 gpui.workspace = true
 search.workspace = true

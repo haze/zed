@@ -8,7 +8,7 @@ license = "GPL-3.0-or-later"
 
 [features]
 default = []
-assistant = ["dep:assistant"]
+assistant = ["dep:assistant", "quick_action_bar/assistant"]
 collab = ["dep:collab_ui"]
 copilot = ["dep:copilot_ui"]
 

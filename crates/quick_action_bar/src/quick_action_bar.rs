@@ -1,26 +1,34 @@
+#[cfg(feature = "assistant")]
 use assistant::{AssistantPanel, InlineAssist};
 use editor::{Editor, EditorSettings};
 
 use gpui::{
     Action, ClickEvent, ElementId, EventEmitter, InteractiveElement, ParentElement, Render, Styled,
-    Subscription, View, ViewContext, WeakView,
+    Subscription, View, ViewContext,
 };
 use search::{buffer_search, BufferSearchBar};
 use settings::{Settings, SettingsStore};
 use ui::{prelude::*, ButtonSize, ButtonStyle, IconButton, IconName, IconSize, Tooltip};
 use workspace::{
-    item::ItemHandle, ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView, Workspace,
+    item::ItemHandle, ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
 };
+
+#[cfg(feature = "assistant")]
+use workspace::Workspace;
+#[cfg(feature = "assistant")]
+use gpui::WeakView;
 
 pub struct QuickActionBar {
     buffer_search_bar: View<BufferSearchBar>,
     active_item: Option<Box<dyn ItemHandle>>,
     _inlay_hints_enabled_subscription: Option<Subscription>,
+    #[cfg(feature = "assistant")]
     workspace: WeakView<Workspace>,
     show: bool,
 }
 
 impl QuickActionBar {
+    #[cfg(feature = "assistant")]
     pub fn new(
         buffer_search_bar: View<BufferSearchBar>,
         workspace: &Workspace,
@@ -31,6 +39,23 @@ impl QuickActionBar {
             active_item: None,
             _inlay_hints_enabled_subscription: None,
             workspace: workspace.weak_handle(),
+            show: true,
+        };
+        this.apply_settings(cx);
+        cx.observe_global::<SettingsStore>(|this, cx| this.apply_settings(cx))
+            .detach();
+        this
+    }
+
+    #[cfg(not(feature = "assistant"))]
+    pub fn new(
+        buffer_search_bar: View<BufferSearchBar>,
+        cx: &mut ViewContext<Self>,
+    ) -> Self {
+        let mut this = Self {
+            buffer_search_bar,
+            active_item: None,
+            _inlay_hints_enabled_subscription: None,
             show: true,
         };
         this.apply_settings(cx);
@@ -103,30 +128,41 @@ impl Render for QuickActionBar {
         ))
         .filter(|_| editor.is_singleton(cx));
 
-        let assistant_button = QuickActionBarButton::new(
-            "toggle inline assistant",
-            IconName::MagicWand,
-            false,
-            Box::new(InlineAssist),
-            "Inline Assist",
-            {
-                let workspace = self.workspace.clone();
-                move |_, cx| {
-                    if let Some(workspace) = workspace.upgrade() {
-                        workspace.update(cx, |workspace, cx| {
-                            AssistantPanel::inline_assist(workspace, &InlineAssist, cx);
-                        });
+        #[cfg(feature = "assistant")]
+        {
+            let assistant_button = QuickActionBarButton::new(
+                "toggle inline assistant",
+                IconName::MagicWand,
+                false,
+                Box::new(InlineAssist),
+                "Inline Assist",
+                {
+                    let workspace = self.workspace.clone();
+                    move |_, cx| {
+                        if let Some(workspace) = workspace.upgrade() {
+                            workspace.update(cx, |workspace, cx| {
+                                AssistantPanel::inline_assist(workspace, &InlineAssist, cx);
+                            });
+                        }
                     }
-                }
-            },
-        );
+                },
+            );
 
-        h_flex()
-            .id("quick action bar")
-            .gap_2()
-            .children(inlay_hints_button)
-            .children(search_button)
-            .child(assistant_button)
+            h_flex()
+                .id("quick action bar")
+                .gap_2()
+                .children(inlay_hints_button)
+                .children(search_button)
+                .child(assistant_button)
+        }
+
+        #[cfg(not(feature = "assistant"))] {
+            h_flex()
+                .id("quick action bar")
+                .gap_2()
+                .children(inlay_hints_button)
+                .children(search_button)
+        }
     }
 }
 
