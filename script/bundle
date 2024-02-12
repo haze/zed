@@ -24,13 +24,14 @@ Build the application bundle.
 Options:
   -d    Compile in debug mode
   -l    Compile for local architecture and copy bundle to /Applications, implies -d.
+  -r    Compile for local architecture and copy bundle to /Applications.
   -o    Open the resulting DMG or the app itself in local mode.
   -f    Overwrite the local app bundle if it exists.
   -h    Display this help and exit.
   "
 }
 
-while getopts 'dlfoh' flag
+while getopts 'dlfohr' flag
 do
     case "${flag}" in
         o) open_result=true;;
@@ -47,6 +48,14 @@ do
             local_arch=true
             local_only=true
             target_dir="debug"
+            ;;
+        r)
+            export CARGO_INCREMENTAL=true
+            export CARGO_BUNDLE_SKIP_BUILD=true
+            build_flag="--release"
+            local_arch=true
+            local_only=true
+            target_dir="release"
             ;;
         f) overwrite_local_app=true;;
         h)
@@ -70,7 +79,7 @@ if [ "$cargo_bundle_version" != "cargo-bundle v0.6.0-zed" ]; then
     cargo install cargo-bundle --git https://github.com/zed-industries/cargo-bundle.git --branch zed-deploy
 fi
 
-rustup target add wasm32-wasi
+# rustup target add wasm32-wasi
 
 # Deal with versions of macOS that don't include libstdc++ headers
 export CXXFLAGS="-stdlib=libc++"
