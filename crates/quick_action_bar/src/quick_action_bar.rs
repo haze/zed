@@ -1,5 +1,5 @@
 #[cfg(feature = "assistant")]
-use assistant::{AssistantPanel, InlineAssist};
+use assistant::{assistant_settings::AssistantSettings, AssistantPanel, InlineAssist};
 use editor::{Editor, EditorSettings};
 
 use gpui::{
@@ -9,14 +9,12 @@ use gpui::{
 use search::{buffer_search, BufferSearchBar};
 use settings::{Settings, SettingsStore};
 use ui::{prelude::*, ButtonSize, ButtonStyle, IconButton, IconName, IconSize, Tooltip};
-use workspace::{
-    item::ItemHandle, ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView,
-};
+use workspace::{item::ItemHandle, ToolbarItemEvent, ToolbarItemLocation, ToolbarItemView};
 
 #[cfg(feature = "assistant")]
-use workspace::Workspace;
-#[cfg(feature = "assistant")]
 use gpui::WeakView;
+#[cfg(feature = "assistant")]
+use workspace::Workspace;
 
 pub struct QuickActionBar {
     buffer_search_bar: View<BufferSearchBar>,
@@ -48,10 +46,7 @@ impl QuickActionBar {
     }
 
     #[cfg(not(feature = "assistant"))]
-    pub fn new(
-        buffer_search_bar: View<BufferSearchBar>,
-        cx: &mut ViewContext<Self>,
-    ) -> Self {
+    pub fn new(buffer_search_bar: View<BufferSearchBar>, cx: &mut ViewContext<Self>) -> Self {
         let mut this = Self {
             buffer_search_bar,
             active_item: None,
@@ -147,21 +142,14 @@ impl Render for QuickActionBar {
                     }
                 },
             );
-
             h_flex()
                 .id("quick action bar")
                 .gap_2()
                 .children(inlay_hints_button)
                 .children(search_button)
-                .child(assistant_button)
-        }
-
-        #[cfg(not(feature = "assistant"))] {
-            h_flex()
-                .id("quick action bar")
-                .gap_2()
-                .children(inlay_hints_button)
-                .children(search_button)
+                .when(AssistantSettings::get_global(cx).button, |bar| {
+                    bar.child(assistant_button)
+                })
         }
     }
 }

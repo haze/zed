@@ -38,7 +38,7 @@ pub use registrar::DivRegistrar;
 use registrar::{ForDeployed, ForDismissed, SearchActionsRegistrar, WithResults};
 
 const MIN_INPUT_WIDTH_REMS: f32 = 15.;
-const MAX_INPUT_WIDTH_REMS: f32 = 25.;
+const MAX_INPUT_WIDTH_REMS: f32 = 30.;
 
 #[derive(PartialEq, Clone, Deserialize)]
 pub struct Deploy {
@@ -182,11 +182,13 @@ impl Render for BufferSearchBar {
                 if self.query(cx).is_empty() {
                     return None;
                 }
-                let matches = self
+                let matches_count = self
                     .searchable_items_with_matches
-                    .get(&searchable_item.downgrade())?;
+                    .get(&searchable_item.downgrade())
+                    .map(Vec::len)
+                    .unwrap_or(0);
                 if let Some(match_ix) = self.active_match_index {
-                    Some(format!("{}/{}", match_ix + 1, matches.len()))
+                    Some(format!("{}/{}", match_ix + 1, matches_count))
                 } else {
                     match_color = Color::Error; // No matches found
                     None
@@ -215,7 +217,6 @@ impl Render for BufferSearchBar {
                     .flex_1()
                     .px_2()
                     .py_1()
-                    .gap_2()
                     .border_1()
                     .border_color(editor_border)
                     .min_w(rems(MIN_INPUT_WIDTH_REMS))
@@ -299,7 +300,7 @@ impl Render for BufferSearchBar {
             )
             .child(
                 h_flex()
-                    .gap_0p5()
+                    .gap_2()
                     .flex_none()
                     .child(
                         IconButton::new("select-all", ui::IconName::SelectAll)
@@ -323,19 +324,18 @@ impl Render for BufferSearchBar {
                     )),
             );
 
-        let replace_line = self.replace_enabled.then(|| {
+        let replace_line = should_show_replace_input.then(|| {
             h_flex()
-                .gap_0p5()
+                .gap_2()
                 .flex_1()
                 .child(
                     h_flex()
                         .flex_1()
                         // We're giving this a fixed height to match the height of the search input,
                         // which has an icon inside that is increasing its height.
-                        // .h_8()
+                        .h_8()
                         .px_2()
                         .py_1()
-                        .gap_2()
                         .border_1()
                         .border_color(cx.theme().colors().border)
                         .rounded_lg()
@@ -347,22 +347,28 @@ impl Render for BufferSearchBar {
                             cx,
                         )),
                 )
-                .when(should_show_replace_input, |this| {
-                    this.child(
-                        IconButton::new("search-replace-next", ui::IconName::ReplaceNext)
-                            .tooltip(move |cx| {
-                                Tooltip::for_action("Replace next", &ReplaceNext, cx)
-                            })
-                            .on_click(
-                                cx.listener(|this, _, cx| this.replace_next(&ReplaceNext, cx)),
-                            ),
-                    )
-                    .child(
-                        IconButton::new("search-replace-all", ui::IconName::ReplaceAll)
-                            .tooltip(move |cx| Tooltip::for_action("Replace all", &ReplaceAll, cx))
-                            .on_click(cx.listener(|this, _, cx| this.replace_all(&ReplaceAll, cx))),
-                    )
-                })
+                .child(
+                    h_flex()
+                        .flex_none()
+                        .child(
+                            IconButton::new("search-replace-next", ui::IconName::ReplaceNext)
+                                .tooltip(move |cx| {
+                                    Tooltip::for_action("Replace next", &ReplaceNext, cx)
+                                })
+                                .on_click(
+                                    cx.listener(|this, _, cx| this.replace_next(&ReplaceNext, cx)),
+                                ),
+                        )
+                        .child(
+                            IconButton::new("search-replace-all", ui::IconName::ReplaceAll)
+                                .tooltip(move |cx| {
+                                    Tooltip::for_action("Replace all", &ReplaceAll, cx)
+                                })
+                                .on_click(
+                                    cx.listener(|this, _, cx| this.replace_all(&ReplaceAll, cx)),
+                                ),
+                        ),
+                )
         });
 
         v_flex()
@@ -393,7 +399,7 @@ impl Render for BufferSearchBar {
             .when(self.supported_options().word, |this| {
                 this.on_action(cx.listener(Self::toggle_whole_word))
             })
-            .gap_1()
+            .gap_2()
             .child(
                 h_flex().child(search_line.w_full()).child(
                     IconButton::new(SharedString::from("Close"), IconName::Close)
@@ -682,7 +688,6 @@ impl BufferSearchBar {
                 });
             });
             self.search_options = options;
-            self.query_contains_error = false;
             self.clear_matches(cx);
             cx.notify();
         }
@@ -799,7 +804,6 @@ impl BufferSearchBar {
             editor::EditorEvent::Focused => self.query_editor_focused = true,
             editor::EditorEvent::Blurred => self.query_editor_focused = false,
             editor::EditorEvent::Edited => {
-                self.query_contains_error = false;
                 self.clear_matches(cx);
                 let search = self.update_matches(cx);
                 cx.spawn(|this, mut cx| async move {
@@ -840,6 +844,16 @@ impl BufferSearchBar {
     fn toggle_whole_word(&mut self, _: &ToggleWholeWord, cx: &mut ViewContext<Self>) {
         self.toggle_search_option(SearchOptions::WHOLE_WORD, cx)
     }
+
+    fn clear_active_searchable_item_matches(&mut self, cx: &mut WindowContext) {
+        if let Some(active_searchable_item) = self.active_searchable_item.as_ref() {
+            self.active_match_index = None;
+            self.searchable_items_with_matches
+                .remove(&active_searchable_item.downgrade());
+            active_searchable_item.clear_matches(cx);
+        }
+    }
+
     fn clear_matches(&mut self, cx: &mut ViewContext<Self>) {
         let mut active_item_matches = None;
         for (searchable_item, matches) in self.searchable_items_with_matches.drain() {
@@ -864,9 +878,9 @@ impl BufferSearchBar {
         self.pending_search.take();
 
         if let Some(active_searchable_item) = self.active_searchable_item.as_ref() {
+            self.query_contains_error = false;
             if query.is_empty() {
-                self.active_match_index.take();
-                active_searchable_item.clear_matches(cx);
+                self.clear_active_searchable_item_matches(cx);
                 let _ = done_tx.send(());
                 cx.notify();
             } else {
@@ -882,7 +896,7 @@ impl BufferSearchBar {
                         Ok(query) => query.with_replacement(self.replacement(cx)),
                         Err(_) => {
                             self.query_contains_error = true;
-                            self.active_match_index = None;
+                            self.clear_active_searchable_item_matches(cx);
                             cx.notify();
                             return done_rx;
                         }
@@ -899,7 +913,7 @@ impl BufferSearchBar {
                         Ok(query) => query.with_replacement(self.replacement(cx)),
                         Err(_) => {
                             self.query_contains_error = true;
-                            self.active_match_index = None;
+                            self.clear_active_searchable_item_matches(cx);
                             cx.notify();
                             return done_rx;
                         }
@@ -1905,5 +1919,44 @@ mod tests {
         "#
             .unindent()
         );
+    }
+
+    #[gpui::test]
+    async fn test_invalid_regexp_search_after_valid(cx: &mut TestAppContext) {
+        let (editor, search_bar, cx) = init_test(cx);
+        let display_points_of = |background_highlights: Vec<(Range<DisplayPoint>, Hsla)>| {
+            background_highlights
+                .into_iter()
+                .map(|(range, _)| range)
+                .collect::<Vec<_>>()
+        };
+        // Search using valid regexp
+        search_bar
+            .update(cx, |search_bar, cx| {
+                search_bar.activate_search_mode(SearchMode::Regex, cx);
+                search_bar.search("expression", None, cx)
+            })
+            .await
+            .unwrap();
+        editor.update(cx, |editor, cx| {
+            assert_eq!(
+                display_points_of(editor.all_text_background_highlights(cx)),
+                &[
+                    DisplayPoint::new(0, 10)..DisplayPoint::new(0, 20),
+                    DisplayPoint::new(1, 9)..DisplayPoint::new(1, 19),
+                ],
+            );
+        });
+
+        // Now, the expression is invalid
+        search_bar
+            .update(cx, |search_bar, cx| {
+                search_bar.search("expression (", None, cx)
+            })
+            .await
+            .unwrap_err();
+        editor.update(cx, |editor, cx| {
+            assert!(display_points_of(editor.all_text_background_highlights(cx)).is_empty(),);
+        });
     }
 }

@@ -1,9 +1,9 @@
-struct Globals {
+struct GlobalParams {
     viewport_size: vec2<f32>,
     pad: vec2<u32>,
 }
 
-var<uniform> globals: Globals;
+var<uniform> globals: GlobalParams;
 var t_sprite: texture_2d<f32>;
 var s_sprite: sampler;
 
@@ -215,6 +215,15 @@ fn fs_quad(input: QuadVarying) -> @location(0) vec4<f32> {
     }
 
     let quad = b_quads[input.quad_id];
+    // Fast path when the quad is not rounded and doesn't have any border.
+    if (quad.corner_radii.top_left == 0.0 && quad.corner_radii.bottom_left == 0.0 &&
+        quad.corner_radii.top_right == 0.0 &&
+        quad.corner_radii.bottom_right == 0.0 && quad.border_widths.top == 0.0 &&
+        quad.border_widths.left == 0.0 && quad.border_widths.right == 0.0 &&
+        quad.border_widths.bottom == 0.0) {
+        return input.background_color;
+    }
+
     let half_size = quad.bounds.size / 2.0;
     let center = quad.bounds.origin + half_size;
     let center_to_point = input.position.xy - center;
@@ -563,7 +572,56 @@ fn fs_poly_sprite(input: PolySpriteVarying) -> @location(0) vec4<f32> {
         color = vec4<f32>(vec3<f32>(grayscale), sample.a);
     }
     color.a *= saturate(0.5 - distance);
-    return color;;
+    return color;
 }
 
-// --- surface sprites --- //
+// --- surfaces --- //
+
+struct SurfaceParams {
+    bounds: Bounds,
+    content_mask: Bounds,
+}
+
+var<uniform> surface_locals: SurfaceParams;
+var t_y: texture_2d<f32>;
+var t_cb_cr: texture_2d<f32>;
+var s_surface: sampler;
+
+const ycbcr_to_RGB = mat4x4<f32>(
+    vec4<f32>( 1.0000f,  1.0000f,  1.0000f, 0.0),
+    vec4<f32>( 0.0000f, -0.3441f,  1.7720f, 0.0),
+    vec4<f32>( 1.4020f, -0.7141f,  0.0000f, 0.0),
+    vec4<f32>(-0.7010f,  0.5291f, -0.8860f, 1.0),
+);
+
+struct SurfaceVarying {
+    @builtin(position) position: vec4<f32>,
+    @location(0) texture_position: vec2<f32>,
+    @location(3) clip_distances: vec4<f32>,
+}
+
+@vertex
+fn vs_surface(@builtin(vertex_index) vertex_id: u32) -> SurfaceVarying {
+    let unit_vertex = vec2<f32>(f32(vertex_id & 1u), 0.5 * f32(vertex_id & 2u));
+
+    var out = SurfaceVarying();
+    out.position = to_device_position(unit_vertex, surface_locals.bounds);
+    out.texture_position = unit_vertex;
+    out.clip_distances = distance_from_clip_rect(unit_vertex, surface_locals.bounds, surface_locals.content_mask);
+    return out;
+}
+
+@fragment
+fn fs_surface(input: SurfaceVarying) -> @location(0) vec4<f32> {
+    // Alpha clip after using the derivatives.
+    if (any(input.clip_distances < vec4<f32>(0.0))) {
+        return vec4<f32>(0.0);
+    }
+
+    let y_cb_cr = vec4<f32>(
+        textureSampleLevel(t_y, s_surface, input.texture_position, 0.0).r,
+        textureSampleLevel(t_cb_cr, s_surface, input.texture_position, 0.0).rg,
+        1.0);
+
+    return ycbcr_to_RGB * y_cb_cr;
+}

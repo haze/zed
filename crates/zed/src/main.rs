@@ -195,7 +195,13 @@ fn main() {
         #[cfg(feature = "assistant")]
         assistant::init(cx);
 
-        extension::init(fs.clone(), languages.clone(), ThemeRegistry::global(cx), cx);
+        extension::init(
+            fs.clone(),
+            http.clone(),
+            languages.clone(),
+            ThemeRegistry::global(cx),
+            cx,
+        );
 
         load_user_themes_in_background(fs.clone(), cx);
         #[cfg(target_os = "macos")]
@@ -260,6 +266,7 @@ fn main() {
         outline::init(cx);
         project_symbols::init(cx);
         project_panel::init(Assets, cx);
+        tasks_ui::init(cx);
         channel::init(&client, user_store.clone(), cx);
         search::init(cx);
         semantic_index::init(fs.clone(), http.clone(), languages.clone(), cx);
@@ -279,6 +286,7 @@ fn main() {
         feedback::init(cx);
         markdown_preview::init(cx);
         welcome::init(cx);
+        extensions_ui::init(cx);
 
         cx.set_menus(app_menus());
         initialize_workspace(app_state.clone(), cx);
@@ -345,7 +353,7 @@ fn main() {
                 cx.spawn(|cx| async move {
                     // ignore errors here, we'll show a generic "not signed in"
                     let _ = authenticate(client, &cx).await;
-                    cx.update(|cx| workspace::open_channel(channel_id, app_state, None, cx))?
+                    cx.update(|cx| workspace::join_channel(channel_id, app_state, None, cx))?
                         .await?;
                     anyhow::Ok(())
                 })
@@ -380,47 +388,27 @@ fn main() {
                 .detach(),
         }
 
-        #[cfg(feature = "collab_ui")] {
-            let app_state = app_state.clone();
-            cx.spawn(move |cx| async move {
-                while let Some(request) = open_rx.next().await {
-                    match request {
-                        OpenRequest::Paths { paths } => {
-                            cx.update(|cx| open_paths_and_log_errs(&paths, &app_state, cx))
-                                .ok();
-                        }
-                        OpenRequest::CliConnection { connection } => {
-                            let app_state = app_state.clone();
-                            cx.spawn(move |cx| {
-                                handle_cli_connection(connection, app_state.clone(), cx)
-                            })
-                            .detach();
-                        }
-                        OpenRequest::JoinChannel { channel_id } => {
-                            let app_state = app_state.clone();
-                            cx.update(|mut cx| {
-                                cx.spawn(|cx| async move {
-                                    cx.update(|cx| {
-                                        workspace::open_channel(channel_id, app_state, None, cx)
-                                    })?
-                                    .await?;
-                                    anyhow::Ok(())
-                                })
-                                .detach_and_log_err(&mut cx);
-                            })
-                            .log_err();
-                        }
-                        OpenRequest::OpenChannelNotes {
-                            channel_id,
-                            heading,
-                        } => {
-                            let app_state = app_state.clone();
-                            let open_notes_task = cx.spawn(|mut cx| async move {
-                                let workspace_window =
-                                    workspace::get_any_active_workspace(app_state, cx.clone()).await?;
-                                let workspace = workspace_window.root_view(&cx)?;
-                                cx.update_window(workspace_window.into(), |_, cx| {
-                                    ChannelView::open(channel_id, heading, workspace, cx)
+        let app_state = app_state.clone();
+        cx.spawn(move |cx| async move {
+            while let Some(request) = open_rx.next().await {
+                match request {
+                    OpenRequest::Paths { paths } => {
+                        cx.update(|cx| open_paths_and_log_errs(&paths, &app_state, cx))
+                            .ok();
+                    }
+                    OpenRequest::CliConnection { connection } => {
+                        let app_state = app_state.clone();
+                        cx.spawn(move |cx| {
+                            handle_cli_connection(connection, app_state.clone(), cx)
+                        })
+                        .detach();
+                    }
+                    OpenRequest::JoinChannel { channel_id } => {
+                        let app_state = app_state.clone();
+                        cx.update(|mut cx| {
+                            cx.spawn(|cx| async move {
+                                cx.update(|cx| {
+                                    workspace::join_channel(channel_id, app_state, None, cx)
                                 })?
                                 .await?;
                                 anyhow::Ok(())

@@ -6,6 +6,7 @@ pub use language::*;
 use lazy_static::lazy_static;
 use lsp::LanguageServerBinary;
 use regex::Regex;
+use serde_json::json;
 use smol::{fs, process};
 use std::{
     any::Any,
@@ -124,10 +125,16 @@ impl super::LspAdapter for GoLspAdapter {
             .args(["install", "golang.org/x/tools/gopls@latest"])
             .output()
             .await?;
-        anyhow::ensure!(
-            install_output.status.success(),
-            "failed to install gopls. Is `go` installed and in the PATH?"
-        );
+
+        if !install_output.status.success() {
+            log::error!(
+                "failed to install gopls via `go install`. stdout: {:?}, stderr: {:?}",
+                String::from_utf8_lossy(&install_output.stdout),
+                String::from_utf8_lossy(&install_output.stderr)
+            );
+
+            return Err(anyhow!("failed to install gopls with `go install`. Is `go` installed and in the PATH? Check logs for more information."));
+        }
 
         let installed_binary_path = gobin_dir.join("gopls");
         let version_output = process::Command::new(&installed_binary_path)
@@ -168,6 +175,21 @@ impl super::LspAdapter for GoLspAdapter {
                 binary.arguments = vec!["--help".into()];
                 binary
             })
+    }
+
+    fn initialization_options(&self) -> Option<serde_json::Value> {
+        Some(json!({
+            "usePlaceholders": true,
+            "hints": {
+                "assignVariableTypes": true,
+                "compositeLiteralFields": true,
+                "compositeLiteralTypes": true,
+                "constantValues": true,
+                "functionTypeParameters": true,
+                "parameterNames": true,
+                "rangeVariableTypes": true
+            }
+        }))
     }
 
     async fn label_for_completion(
